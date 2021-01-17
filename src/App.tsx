@@ -1,11 +1,10 @@
-import { Dispatch, SetStateAction, useState } from "react";
+import { Dispatch, SetStateAction, useRef, useState } from "react";
 import "./App.css";
 
 import { parse } from "papaparse";
 import { pipe } from "fp-ts/lib/function";
 import { getOrElse, isSome, none, Option, some } from "fp-ts/lib/Option";
 import { option } from "fp-ts";
-import { LineChart, Line, CartesianGrid, XAxis, YAxis } from "recharts";
 import Plot from "react-plotly.js";
 import { Datum } from "plotly.js";
 
@@ -42,17 +41,10 @@ function fileHandle(
 
 interface DataProps {
   data: DynamicData[];
+  onClick: Dispatch<SetStateAction<Option<string[]>>>;
   x: string;
   y: string;
 }
-
-const RenderLineChart = ({ data, x, y }: DataProps) => (
-  <LineChart width={600} height={500} data={data}>
-    <XAxis dataKey={x} />
-    <YAxis />
-    <Line type="monotone" dataKey={y} stroke="#8884d8" />
-  </LineChart>
-);
 
 interface DataPropsPlotly {
   x: Datum[];
@@ -76,7 +68,14 @@ const reshuffleData = (
   };
 };
 
-const RenderLineChartPlotly = ({ data, x, y }: DataProps) => {
+const lookup = (index: number, data: DataPropsPlotly): string[] => {
+  return [
+    index.toString(),
+    data.x[index]?.toString() ?? "baddata",
+    data.y[index]?.toString() ?? "bad data",
+  ];
+};
+const RenderLineChartPlotly = ({ data, x, y, onClick }: DataProps) => {
   let plotlydata = reshuffleData(data, x, y);
   return (
     <Plot
@@ -89,12 +88,21 @@ const RenderLineChartPlotly = ({ data, x, y }: DataProps) => {
           marker: { color: "red" },
         },
       ]}
-      layout={{ title: "A Fancy Plot" }}
+      layout={{ title: "Click a point to see the raw data" }}
+      onClick={(event) =>
+        onClick(some(lookup(event.points[0]?.pointIndex, plotlydata)))
+      }
     />
   );
 };
 
-const ParseData = (data: Option<DynamicData[]>) => {
+const ParseData = ({
+  data,
+  onClick,
+}: {
+  data: Option<DynamicData[]>;
+  onClick: Dispatch<SetStateAction<Option<string[]>>>;
+}) => {
   console.log("p1");
   console.log(data);
   let [x, setX] = useState<Option<string>>(none);
@@ -115,8 +123,12 @@ const ParseData = (data: Option<DynamicData[]>) => {
             <option hidden value="">
               placeholder
             </option>
-            {headers.map((value) => {
-              return <option value={value}>{value}</option>;
+            {headers.map((value, index) => {
+              return (
+                <option value={value} key={index}>
+                  {value}
+                </option>
+              );
             })}
           </select>
         </div>
@@ -129,19 +141,23 @@ const ParseData = (data: Option<DynamicData[]>) => {
             <option hidden value="">
               placeholder
             </option>
-            {headers.map((value) => {
-              return <option value={value}>{value}</option>;
+            {headers.map((value, index) => {
+              return (
+                <option value={value} key={index}>
+                  {value}
+                </option>
+              );
             })}
           </select>
         </div>
-        <div id="plot">
-          {isSome(x) && isSome(y) && (
-            <RenderLineChart data={data.value} x={x.value} y={y.value} />
-          )}
-        </div>
         <div id="plot2">
           {isSome(x) && isSome(y) && (
-            <RenderLineChartPlotly data={data.value} x={x.value} y={y.value} />
+            <RenderLineChartPlotly
+              data={data.value}
+              x={x.value}
+              y={y.value}
+              onClick={onClick}
+            />
           )}
         </div>
       </>
@@ -156,6 +172,15 @@ const ParseData = (data: Option<DynamicData[]>) => {
 function App() {
   let [error, setError] = useState<Option<string>>(none);
   let [data, setData] = useState<Option<DynamicData[]>>(none);
+  let [img, setImg] = useState<Option<string[]>>(none);
+  let ref = useRef<HTMLInputElement>(null);
+  const clearAll = () => {
+    if (ref && ref.current?.value && ref.current?.value && true) {
+      ref.current.value = "";
+    }
+    setData(none);
+  };
+
   return (
     <div className="App">
       <input
@@ -163,11 +188,25 @@ function App() {
         name="upload-file"
         id="upload_file"
         accept=".csv"
+        ref={ref}
         onChange={(e) => fileHandle(e, setError, setData)}
       />
-      <button>close</button>
-      <ParseData {...data}></ParseData>
+      <button onClick={(_) => clearAll()}>close data file</button>
+      <ParseData data={data} onClick={setImg}></ParseData>
       {isSome(error) && <div> {error} </div>}
+      {isSome(img) && (
+        <div>
+          <text>
+            viewing image for point no {img.value[0]} @ x:{img.value[1]},y:
+            {img.value[2]}{" "}
+          </text>
+          <img
+            src={`https://picsum.photos/200/?random=${img.value[0]}`}
+            alt={img.value.toString()}
+          ></img>
+          <button onClick={(_) => setImg(none)}>close data viewer</button>
+        </div>
+      )}
     </div>
   );
 }
